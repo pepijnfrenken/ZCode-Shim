@@ -1,0 +1,33 @@
+#!/usr/bin/env sh
+set -eu
+
+PROJECT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+
+# ── pre-flight checks ────────────────────────────────────────────────────────
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "error: python3 not found on PATH — Python >= 3.11 is required" >&2
+    exit 1
+fi
+
+AUTH_FILE="$PROJECT_DIR/data/auth.json"
+AUTH_EXAMPLE="$PROJECT_DIR/data/auth.example.json"
+
+if [ -f "$AUTH_FILE" ]; then
+    # Check if it still contains the placeholder token.
+    if grep -q "paste-chatgpt-codex-access-token-here" "$AUTH_FILE" 2>/dev/null; then
+        echo "warning: data/auth.json still contains the placeholder token" >&2
+        echo "  Edit data/auth.json with your real ChatGPT/Codex access token," >&2
+        echo "  or set the ZCODE_OPENAI_SUB_TOKEN environment variable." >&2
+    fi
+elif [ -f "$AUTH_EXAMPLE" ]; then
+    # Auto-copy the example file so the proxy can start and guide the user.
+    cp "$AUTH_EXAMPLE" "$AUTH_FILE"
+    echo "Created data/auth.json from template." >&2
+    echo "Edit it with your ChatGPT/Codex access token, then restart." >&2
+fi
+
+# ── launch ────────────────────────────────────────────────────────────────────
+
+export PYTHONPATH="$PROJECT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m zcode_openai_sub_proxy "$@"

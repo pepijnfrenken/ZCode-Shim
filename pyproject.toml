@@ -1,0 +1,33 @@
+[project]
+name = "zcode-openai-sub-proxy"
+version = "0.1.0"
+description = "Local OpenAI-compatible proxy for ZCode using standalone OpenAI subscription auth"
+readme = "README.md"
+authors = [{name = "Pepijn Frenken"}]
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = []
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: Proxy Servers",
+]
+
+[project.urls]
+repository = "https://github.com/pepijnfrenken/zcode-openai-sub-proxy"
+
+[project.scripts]
+zcode-openai-sub-proxy = "zcode_openai_sub_proxy.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
