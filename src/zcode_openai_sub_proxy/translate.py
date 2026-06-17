@@ -90,8 +90,9 @@ def convert_messages(messages: Any) -> tuple[str, list[dict[str, Any]]]:
                     "content": [{"type": "output_text", "text": text}],
                 })
             # Tool calls are top-level function_call items in the input array
-            # (NOT nested inside the assistant's content).  IDs must begin
-            # with "fc" per the Codex API schema.
+            # (NOT nested inside the assistant's content).  The 'id' field is
+            # intentionally omitted — the Codex API validates it (must begin
+            # with "fc") and oh-my-pi's filterInput() strips it entirely.
             tool_calls = message.get("tool_calls")
             if isinstance(tool_calls, list):
                 for tc in tool_calls:
@@ -103,7 +104,6 @@ def convert_messages(messages: Any) -> tuple[str, list[dict[str, Any]]]:
                     inputs.append({
                         "type": "function_call",
                         "call_id": call_id,
-                        "id": call_id,
                         "name": fn.get("name") or "",
                         "arguments": fn.get("arguments") or "",
                         "status": "completed",
@@ -198,6 +198,17 @@ def extract_tool_calls(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     calls[call_id] = {"name": "", "arguments": ""}
                     ordered_ids.append(call_id)
                 calls[call_id]["arguments"] += delta_text
+
+        # function_call_arguments.done — final arguments (alternative to deltas).
+        elif etype == "response.function_call_arguments.done":
+            call_id = event.get("call_id") or ""
+            args = event.get("arguments") or ""
+            if call_id and isinstance(args, str):
+                if call_id not in calls:
+                    calls[call_id] = {"name": "", "arguments": args}
+                    ordered_ids.append(call_id)
+                else:
+                    calls[call_id]["arguments"] = args
 
         # output_item.done — finalize with complete arguments if available.
         elif etype == "response.output_item.done":
@@ -298,6 +309,10 @@ def build_codex_body(payload: dict[str, Any]) -> dict[str, Any]:
         body["reasoning"] = {"effort": effort}
     elif ultracode_enabled():
         body["reasoning"] = {"effort": default_effort()}
+
+    # Match oh-my-pi defaults: low verbosity and reasoning replay support.
+    body["text"] = {"verbosity": "low"}
+    body["include"] = ["reasoning.encrypted_content"]
 
     # Forward tool definitions — the Codex Responses API uses a flat format
     # ({type, name, description, parameters}) unlike OpenAI's nested format
