@@ -28,6 +28,9 @@ repository = "https://github.com/pepijnfrenken/zcode-openai-sub-proxy"
 [project.scripts]
 zcode-openai-sub-proxy = "zcode_openai_sub_proxy.server:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/zcode_openai_sub_proxy"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

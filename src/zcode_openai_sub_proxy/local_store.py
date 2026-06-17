@@ -12,7 +12,7 @@ import urllib.error
 from pathlib import Path
 from typing import Any
 
-from .config import AUTH_FILE, AUTH_EXAMPLE_FILE, MODELS_FILE
+from .config import AUTH_FILE, AUTH_EXAMPLE_FILE, DEFAULT_MODELS_FILE, MODELS_FILE
 
 _credential_cache: dict[str, Any] | None = None
 
@@ -234,6 +234,7 @@ def _read_credential() -> dict[str, Any]:
     if not credential.get("access"):
         # Auto-copy example file if auth.json doesn't exist yet.
         if not AUTH_FILE.exists() and AUTH_EXAMPLE_FILE.exists():
+            AUTH_FILE.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(AUTH_EXAMPLE_FILE, AUTH_FILE)
             print(
                 f"Created {AUTH_FILE} from template.\n"
@@ -288,9 +289,14 @@ def read_openai_codex_account_id() -> str:
     """Return the optional ChatGPT account ID.
 
     Sources checked in order:
-      1. Explicit ``accountId`` in ``data/auth.json``
-      2. Extracted from JWT claims (when using Codex CLI auth)
+      1. Extracted from ``ZCODE_OPENAI_SUB_TOKEN`` env var
+      2. Explicit ``accountId`` in ``data/auth.json``
+      3. Extracted from JWT claims (when using Codex CLI auth)
     """
+    env_token = os.environ.get("ZCODE_OPENAI_SUB_TOKEN", "").strip()
+    if env_token:
+        return _account_id_from_jwt(env_token)
+
     credential = _read_credential()
     account_id = credential.get("accountId")
     if isinstance(account_id, str) and account_id.strip():
@@ -306,7 +312,8 @@ def read_openai_codex_account_id() -> str:
 
 def read_models() -> list[dict[str, Any]]:
     """Return the list of model definitions from data/models.json."""
-    models = json.loads(MODELS_FILE.read_text())
+    path = MODELS_FILE if MODELS_FILE.is_file() else DEFAULT_MODELS_FILE
+    models = json.loads(path.read_text())
     if not isinstance(models, list):
         return []
     return [model for model in models if isinstance(model, dict)]

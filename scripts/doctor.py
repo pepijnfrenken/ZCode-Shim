@@ -20,6 +20,9 @@ DATA_DIR = Path(os.environ.get("ZCODE_OPENAI_SUB_PROXY_DATA", PROJECT_ROOT / "da
 AUTH_FILE = DATA_DIR / "auth.json"
 AUTH_EXAMPLE_FILE = DATA_DIR / "auth.example.json"
 MODELS_FILE = DATA_DIR / "models.json"
+DEFAULT_MODELS_FILE = PROJECT_ROOT / "data" / "models.json"
+if not DEFAULT_MODELS_FILE.is_file():
+    DEFAULT_MODELS_FILE = PROJECT_ROOT / "src" / "zcode_openai_sub_proxy" / "data" / "models.json"
 CODEX_HOME = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
 CODEX_AUTH_FILE = CODEX_HOME / "auth.json"
 CODEX_HOST = "chatgpt.com"
@@ -130,25 +133,28 @@ def check_auth_file() -> None:
 
 def check_models_file() -> None:
     """Verify data/models.json exists and has valid models."""
-    if not MODELS_FILE.exists():
-        _err(f"{MODELS_FILE} not found")
+    path = MODELS_FILE if MODELS_FILE.exists() else DEFAULT_MODELS_FILE
+    if not path.exists():
+        _err(f"{MODELS_FILE} not found and no bundled default model list is available")
         return
+    if path != MODELS_FILE:
+        _warn(f"{MODELS_FILE} not found — using bundled default model list")
 
     try:
-        models = json.loads(MODELS_FILE.read_text())
+        models = json.loads(path.read_text())
     except json.JSONDecodeError as exc:
-        _err(f"{MODELS_FILE} is not valid JSON: {exc}")
+        _err(f"{path} is not valid JSON: {exc}")
         return
 
     if not isinstance(models, list):
-        _err(f"{MODELS_FILE} must contain a JSON array")
+        _err(f"{path} must contain a JSON array")
         return
 
     valid = [m for m in models if isinstance(m, dict) and isinstance(m.get("id"), str)]
     if valid:
-        _ok(f"{MODELS_FILE} loaded with {len(valid)} model(s)")
+        _ok(f"{path} loaded with {len(valid)} model(s)")
     else:
-        _warn(f"{MODELS_FILE} has no valid model entries")
+        _warn(f"{path} has no valid model entries")
 
 
 def check_upstream_connectivity() -> None:

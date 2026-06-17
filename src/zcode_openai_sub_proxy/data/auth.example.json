@@ -1,0 +1,14 @@
+{
+  "_comment": "Copy this file to auth.json (or let install.sh do it) and fill in your credentials.",
+
+  "_recommended": "Run `codex login` once — the proxy auto-reads ~/.codex/auth.json. No manual editing needed.",
+
+  "_alternative_env_var": "Set ZCODE_OPENAI_SUB_TOKEN in your environment instead of writing to this file.",
+
+  "_token_source_priority": "1. ZCODE_OPENAI_SUB_TOKEN env var  2. ~/.codex/auth.json (Codex CLI)  3. data/auth.json (this file, manual)",
+
+  "_manual_extraction": "If you don't want to use the Codex CLI, extract a JWT manually: open chatgpt.com in your browser → DevTools (F12) → Application → Local Storage → copy the 'codex' key value.",
+
+  "access": "paste-chatgpt-codex-access-token-here",
+  "accountId": "optional-chatgpt-account-id"
+}
