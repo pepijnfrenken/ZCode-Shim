@@ -228,6 +228,55 @@ def extract_tool_calls(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return tool_calls
 
 
+def _convert_tools_to_codex(tools: Any) -> list[dict[str, Any]]:
+    """Convert OpenAI-format tools to Codex flat format.
+
+    OpenAI: ``{type: "function", function: {name, description, parameters}}``
+    Codex:  ``{type: "function", name, description, parameters}``
+    """
+    if not isinstance(tools, list):
+        return []
+    converted: list[dict[str, Any]] = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        # Already in flat Codex format? Pass through.
+        if tool.get("type") == "function" and "name" in tool and "function" not in tool:
+            converted.append(tool)
+            continue
+        # Convert from OpenAI nested format.
+        fn = tool.get("function")
+        if isinstance(fn, dict):
+            converted.append({
+                "type": "function",
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "parameters": fn.get("parameters", {"type": "object", "properties": {}}),
+            })
+        else:
+            # Unknown format — pass through as-is.
+            converted.append(tool)
+    return converted
+
+
+def _convert_tool_choice_to_codex(tool_choice: Any) -> Any:
+    """Convert OpenAI-format tool_choice to Codex flat format.
+
+    Strings (``"auto"``, ``"none"``, ``"required"``) pass through unchanged.
+    Objects are flattened: ``{type: "function", function: {name}}`` → ``{type: "function", name}``.
+    """
+    if isinstance(tool_choice, str):
+        return tool_choice
+    if isinstance(tool_choice, dict):
+        if tool_choice.get("type") == "function":
+            fn = tool_choice.get("function")
+            if isinstance(fn, dict) and fn.get("name"):
+                return {"type": "function", "name": fn["name"]}
+        # Already flat or unknown — pass through.
+        return tool_choice
+    return tool_choice
+
+
 def build_codex_body(payload: dict[str, Any]) -> dict[str, Any]:
     """Build the Codex Responses API request body from an OpenAI chat-completion payload."""
     instructions, inputs = convert_messages(payload.get("messages"))
@@ -244,11 +293,13 @@ def build_codex_body(payload: dict[str, Any]) -> dict[str, Any]:
     elif ultracode_enabled():
         body["reasoning"] = {"effort": default_effort()}
 
-    # Forward tool definitions — the Codex Responses API accepts OpenAI-format tools.
+    # Forward tool definitions — the Codex Responses API uses a flat format
+    # ({type, name, description, parameters}) unlike OpenAI's nested format
+    # ({type: "function", function: {name, description, parameters}}).
     if "tools" in payload:
-        body["tools"] = payload["tools"]
+        body["tools"] = _convert_tools_to_codex(payload["tools"])
     if "tool_choice" in payload:
-        body["tool_choice"] = payload["tool_choice"]
+        body["tool_choice"] = _convert_tool_choice_to_codex(payload["tool_choice"])
     if "parallel_tool_calls" in payload:
         body["parallel_tool_calls"] = payload["parallel_tool_calls"]
 
