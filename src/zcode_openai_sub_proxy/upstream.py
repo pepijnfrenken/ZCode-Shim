@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import sys
 import urllib.request
+import urllib.error
 from typing import Any
 
 from .config import CODEX_URL
@@ -29,5 +31,10 @@ def call_codex(payload: dict[str, Any]) -> bytes:
         headers=headers,
         data=body,
     )
-    with urllib.request.urlopen(request, timeout=600) as response:
-        return response.read()
+    try:
+        with urllib.request.urlopen(request, timeout=600) as response:
+            return response.read()
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", "replace")[:500]
+        print(f"[upstream error {e.code}] {err_body}", file=sys.stderr)
+        raise

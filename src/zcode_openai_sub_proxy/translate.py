@@ -60,7 +60,13 @@ def extract_text(content: Any) -> str:
 
 
 def convert_messages(messages: Any) -> tuple[str, list[dict[str, Any]]]:
-    """Convert OpenAI chat messages into Codex instructions string + input list."""
+    """Convert OpenAI chat messages into Codex instructions string + input list.
+
+    Tool calls in assistant messages are serialised as text because the Codex
+    Responses API only supports these content types in the ``input`` array:
+    ``input_text``, ``output_text``, ``input_image``, ``refusal``,
+    ``input_file``, ``computer_screenshot``, ``summary_text``.
+    """
     if not isinstance(messages, list):
         return "You are a helpful coding assistant.", []
     instructions: list[str] = []
@@ -77,40 +83,36 @@ def convert_messages(messages: Any) -> tuple[str, list[dict[str, Any]]]:
             continue
 
         if role == "assistant":
-            # Build content parts: text + function_call items from tool_calls.
-            content_parts: list[dict[str, Any]] = []
+            # Build output_text parts — tool calls are serialised as text.
+            parts: list[str] = []
             if text:
-                content_parts.append({"type": "output_text", "text": text})
-
+                parts.append(text)
             tool_calls = message.get("tool_calls")
             if isinstance(tool_calls, list):
                 for tc in tool_calls:
                     if not isinstance(tc, dict):
                         continue
                     fn = tc.get("function") or {}
-                    call_id = tc.get("id") or "call_0"
-                    content_parts.append({
-                        "type": "function_call",
-                        "call_id": call_id,
-                        "id": call_id,
-                        "name": fn.get("name") or "",
-                        "arguments": fn.get("arguments") or "",
-                        "status": "completed",
-                    })
-
-            if content_parts:
-                inputs.append({"role": "assistant", "content": content_parts})
+                    parts.append(
+                        f"[tool_call id={tc.get('id', '?')} "
+                        f"name={fn.get('name', '?')} "
+                        f"args={fn.get('arguments', '{}')}]"
+                    )
+            if parts:
+                inputs.append({
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "\n".join(parts)}],
+                })
             continue
 
         if role == "tool":
-            # Map to function_call_output item.
-            tool_call_id = message.get("tool_call_id") or "call_0"
+            # Serialise tool result as user input text, preserving call_id context.
+            call_id = message.get("tool_call_id", "?")
             inputs.append({
                 "role": "user",
                 "content": [{
-                    "type": "function_call_output",
-                    "call_id": tool_call_id,
-                    "output": text,
+                    "type": "input_text",
+                    "text": f"[tool_result id={call_id}] {text}",
                 }],
             })
             continue
