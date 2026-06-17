@@ -12,7 +12,7 @@ Inspired by:
 - Implements `GET /health`, `GET /v1/models`, `POST /v1/chat/completions`. 
 - Forwards chat-completion requests to the ChatGPT Codex Responses API.
 - Translates the SSE stream back into OpenAI-compatible chunks.
-- Uses only local files under `data/` — no external app databases.
+- Uses local files under `data/` (source checkout) or `~/.config/zcode-openai-sub-proxy/` (installed package) — no external app databases.
 - Adds an **UltraCode** instruction envelope by default (long-horizon continuation reminder, configurable reasoning effort).
 - Zero pip dependencies — stdlib only.
 
@@ -77,11 +77,21 @@ zcode-openai-sub-proxy                        # pip entry point (if installed)
 
 ## Configuration
 
-### Auth token (four sources, checked in priority order)
+### Auth token (three sources, checked in priority order)
 
 The proxy reads your ChatGPT/Codex token from the first available source:
 
-#### 1. `~/.codex/auth.json` (Codex CLI or built-in login — **recommended**)
+#### 1. Environment variable (highest priority)
+
+Set `ZCODE_OPENAI_SUB_TOKEN` — overrides all file sources:
+
+```bash
+export ZCODE_OPENAI_SUB_TOKEN="your-jwt-token-here"
+```
+
+The proxy extracts your account ID from the JWT automatically, so no separate account ID config is needed.
+
+#### 2. `~/.codex/auth.json` (Codex CLI or built-in login — **recommended**)
 
 **Option A: Built-in device-code login** (recommended, no extra tools needed):
 ```bash
@@ -100,14 +110,6 @@ codex login
 Either way, the proxy auto-detects `tokens.access_token` from this file, extracts your account ID from the JWT, and refreshes expired tokens automatically via the OAuth token endpoint.
 
 See also: [oh-my-pi's openai-codex OAuth flow](https://github.com/can1357/oh-my-pi/blob/main/packages/ai/src/registry/oauth/openai-codex.ts) (the reference implementation this follows).
-
-#### 2. Environment variable
-
-Set `ZCODE_OPENAI_SUB_TOKEN` — takes highest precedence over all file sources:
-
-```bash
-export ZCODE_OPENAI_SUB_TOKEN="your-jwt-token-here"
-```
 
 #### 3. `data/auth.json` (manual fallback)
 
@@ -219,12 +221,17 @@ Checks: Python version, auth file validity, models file validity, upstream conne
 zcode-openai-sub-proxy/
 ├── install.sh                  # one-command setup
 ├── bin/zcode-openai-sub-proxy  # shell launcher
-├── scripts/doctor.py           # self-test / health check
+├── scripts/
+│   ├── codex-login.py          # device-code OAuth login
+│   └── doctor.py               # self-test / health check
 ├── data/
 │   ├── auth.example.json       # auth template (committed)
 │   ├── auth.json               # your credentials (gitignored)
 │   └── models.json             # model catalog
 ├── src/zcode_openai_sub_proxy/
+│   ├── data/                   # bundled defaults (used by installed packages)
+│   │   ├── auth.example.json
+│   │   └── models.json
 │   ├── server.py               # HTTP server + entry point
 │   ├── translate.py            # request/response translation
 │   ├── upstream.py             # ChatGPT Codex API calls
