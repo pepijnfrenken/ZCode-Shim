@@ -83,24 +83,41 @@ def convert_messages(messages: Any) -> tuple[str, list[dict[str, Any]]]:
             continue
 
         if role == "assistant":
-            # Only include text content — never serialise tool_calls into the
-            # conversation.  The model already knows what tools it called;
-            # repeating them as text trains it to echo the annotation format.
+            # Text content goes into an output_text assistant item.
             if text:
                 inputs.append({
                     "role": "assistant",
                     "content": [{"type": "output_text", "text": text}],
                 })
+            # Tool calls are top-level function_call items in the input array
+            # (NOT nested inside the assistant's content).  IDs must begin
+            # with "fc" per the Codex API schema.
+            tool_calls = message.get("tool_calls")
+            if isinstance(tool_calls, list):
+                for tc in tool_calls:
+                    if not isinstance(tc, dict):
+                        continue
+                    fn = tc.get("function") or {}
+                    raw_id = tc.get("id") or "call_0"
+                    call_id = raw_id if raw_id.startswith("fc") else f"fc_{raw_id}"
+                    inputs.append({
+                        "type": "function_call",
+                        "call_id": call_id,
+                        "id": call_id,
+                        "name": fn.get("name") or "",
+                        "arguments": fn.get("arguments") or "",
+                        "status": "completed",
+                    })
             continue
 
         if role == "tool":
-            call_id = message.get("tool_call_id", "?")
+            # Tool results are top-level function_call_output items.
+            raw_id = message.get("tool_call_id") or "call_0"
+            call_id = raw_id if raw_id.startswith("fc") else f"fc_{raw_id}"
             inputs.append({
-                "role": "user",
-                "content": [{
-                    "type": "input_text",
-                    "text": f"Tool result (id={call_id}): {text}",
-                }],
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": text,
             })
             continue
 
