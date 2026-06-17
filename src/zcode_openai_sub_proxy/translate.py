@@ -83,30 +83,17 @@ def convert_messages(messages: Any) -> tuple[str, list[dict[str, Any]]]:
             continue
 
         if role == "assistant":
-            # Build output_text parts — serialise tool calls as natural text
-            # so the model doesn't learn to echo the annotation format.
-            parts: list[str] = []
+            # Only include text content — never serialise tool_calls into the
+            # conversation.  The model already knows what tools it called;
+            # repeating them as text trains it to echo the annotation format.
             if text:
-                parts.append(text)
-            tool_calls = message.get("tool_calls")
-            if isinstance(tool_calls, list):
-                for tc in tool_calls:
-                    if not isinstance(tc, dict):
-                        continue
-                    fn = tc.get("function") or {}
-                    parts.append(
-                        f"Previously called {fn.get('name', 'unknown')} "
-                        f"with {fn.get('arguments', '{}')}."
-                    )
-            if parts:
                 inputs.append({
                     "role": "assistant",
-                    "content": [{"type": "output_text", "text": "\n".join(parts)}],
+                    "content": [{"type": "output_text", "text": text}],
                 })
             continue
 
         if role == "tool":
-            # Serialise tool result as user input text.
             call_id = message.get("tool_call_id", "?")
             inputs.append({
                 "role": "user",
