@@ -83,7 +83,8 @@ def convert_messages(messages: Any) -> tuple[str, list[dict[str, Any]]]:
             continue
 
         if role == "assistant":
-            # Build output_text parts — tool calls are serialised as text.
+            # Build output_text parts — serialise tool calls as natural text
+            # so the model doesn't learn to echo the annotation format.
             parts: list[str] = []
             if text:
                 parts.append(text)
@@ -94,9 +95,8 @@ def convert_messages(messages: Any) -> tuple[str, list[dict[str, Any]]]:
                         continue
                     fn = tc.get("function") or {}
                     parts.append(
-                        f"[tool_call id={tc.get('id', '?')} "
-                        f"name={fn.get('name', '?')} "
-                        f"args={fn.get('arguments', '{}')}]"
+                        f"Previously called {fn.get('name', 'unknown')} "
+                        f"with {fn.get('arguments', '{}')}."
                     )
             if parts:
                 inputs.append({
@@ -106,13 +106,13 @@ def convert_messages(messages: Any) -> tuple[str, list[dict[str, Any]]]:
             continue
 
         if role == "tool":
-            # Serialise tool result as user input text, preserving call_id context.
+            # Serialise tool result as user input text.
             call_id = message.get("tool_call_id", "?")
             inputs.append({
                 "role": "user",
                 "content": [{
                     "type": "input_text",
-                    "text": f"[tool_result id={call_id}] {text}",
+                    "text": f"Tool result (id={call_id}): {text}",
                 }],
             })
             continue
