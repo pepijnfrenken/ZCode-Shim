@@ -27,22 +27,17 @@ Inspired by:
 ## Quick Start
 
 ```bash
-# 1. Run the installer (copies config template, runs self-test)
-./install.sh
+# 1. Run the installer with codex-setup (copies config, runs OAuth login, self-test)
+./install.sh --codex-setup
 
-# 2. Set up auth (pick one):
-#    a) Recommended: run `codex login` once — the proxy auto-reads ~/.codex/auth.json
-#    b) Alternative: set ZCODE_OPENAI_SUB_TOKEN env var
-#    c) Manual: edit data/auth.json with your ChatGPT/Codex access token
-
-# 3. Start the proxy
+# 2. Start the proxy
 bin/zcode-openai-sub-proxy
 ```
 
 Optionally install the launcher on your `PATH`:
 
 ```bash
-./install.sh --install-launcher
+./install.sh --codex-setup --install-launcher
 zcode-openai-sub-proxy
 ```
 
@@ -53,12 +48,13 @@ zcode-openai-sub-proxy
 ```bash
 git clone https://github.com/pepijnfrenken/zcode-openai-sub-proxy.git
 cd zcode-openai-sub-proxy
-./install.sh --install-launcher
+./install.sh --codex-setup --install-launcher
 ```
 
 The installer:
 - Checks Python >= 3.11 is available
 - Copies `data/auth.example.json` → `data/auth.json` (if missing)
+- Runs the built-in device-code OAuth login (if `--codex-setup` is passed)
 - Runs the doctor self-test (`scripts/doctor.py`)
 - Optionally symlinks the launcher into `~/.local/bin/`
 
@@ -87,8 +83,9 @@ The proxy reads your ChatGPT/Codex token from the first available source:
 
 #### 1. `~/.codex/auth.json` (Codex CLI or built-in login — **recommended**)
 
-**Option A: Built-in device-code login** (no extra tools needed):
+**Option A: Built-in device-code login** (recommended, no extra tools needed):
 ```bash
+# Run the installer with --codex-setup, or standalone:
 python3 scripts/codex-login.py
 # Opens a browser-based device-code flow → writes ~/.codex/auth.json
 ```

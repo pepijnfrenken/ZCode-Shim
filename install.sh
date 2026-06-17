@@ -8,6 +8,7 @@ set -eu
 # Usage:
 #   ./install.sh                  # setup + doctor
 #   ./install.sh --install-launcher  # also symlink into ~/.local/bin
+#   ./install.sh --codex-setup       # also run device-code OAuth login
 #   ./install.sh --uninstall       # remove launcher symlink
 
 PROJECT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
@@ -120,17 +121,46 @@ uninstall_launcher() {
     fi
 }
 
+# ── Codex device-code login ────────────────────────────────────────────────────
+
+run_codex_setup() {
+    LOGIN_SCRIPT="$PROJECT_DIR/scripts/codex-login.py"
+
+    if [ ! -f "$LOGIN_SCRIPT" ]; then
+        err "codex-login.py not found at $LOGIN_SCRIPT"
+        return 1
+    fi
+
+    say ""
+    say "${BOLD}Running Codex device-code login…${NC}"
+    say ""
+
+    LOGIN_EXIT=0
+    python3 "$LOGIN_SCRIPT" || LOGIN_EXIT=$?
+
+    if [ "$LOGIN_EXIT" -eq 0 ]; then
+        ok "Codex auth configured successfully"
+        return 0
+    else
+        warn "Codex login did not complete — you can run it later with:"
+        warn "  python3 scripts/codex-login.py"
+        return 0  # non-fatal: user can set up auth later
+    fi
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 INSTALL_LAUNCHER=false
+CODEX_SETUP=false
 UNINSTALL=false
 
 for arg in "$@"; do
     case "$arg" in
         --install-launcher) INSTALL_LAUNCHER=true ;;
+        --codex-setup)      CODEX_SETUP=true ;;
         --uninstall)        UNINSTALL=true ;;
         -h|--help)
-            say "Usage: ./install.sh [--install-launcher] [--uninstall]"
+            say "Usage: ./install.sh [--install-launcher] [--codex-setup] [--uninstall]"
             exit 0
             ;;
         *) err "unknown flag: $arg"; exit 1 ;;
@@ -150,6 +180,10 @@ fi
 check_python
 setup_auth
 
+if $CODEX_SETUP; then
+    run_codex_setup
+fi
+
 say ""
 say "${BOLD}Running self-test…${NC}"
 say ""
@@ -167,12 +201,17 @@ if [ "$DOCTOR_EXIT" -eq 0 ]; then
     say "${GREEN}${BOLD}All checks passed.${NC}"
     say ""
     say "Next steps:"
-    say "  1. ${BOLD}Set up auth${NC}:"
-    say "     a) Device-code flow: ${BOLD}python3 scripts/codex-login.py${NC}"
-    say "     b) Or install Codex CLI: ${BOLD}npm i -g @openai/codex && codex login${NC}"
-    say "     c) Or set ${BOLD}ZCODE_OPENAI_SUB_TOKEN${NC} env var"
-    say "     d) Or edit ${BOLD}data/auth.json${NC} manually"
-    say "  2. Start the proxy: ${BOLD}bin/zcode-openai-sub-proxy${NC}"
+    if ! $CODEX_SETUP; then
+        say "  1. ${BOLD}Set up auth${NC}:"
+        say "     a) Device-code flow: ${BOLD}python3 scripts/codex-login.py${NC}"
+        say "     b) Or install Codex CLI: ${BOLD}npm i -g @openai/codex && codex login${NC}"
+        say "     c) Or set ${BOLD}ZCODE_OPENAI_SUB_TOKEN${NC} env var"
+        say "     d) Or edit ${BOLD}data/auth.json${NC} manually"
+        say "  2. Start the proxy: ${BOLD}bin/zcode-openai-sub-proxy${NC}"
+    else
+        say "  1. ${BOLD}Start the proxy${NC}: ${BOLD}bin/zcode-openai-sub-proxy${NC}"
+        say "     (If login failed, run ${BOLD}python3 scripts/codex-login.py${NC} to retry)"
+    fi
     if ! $INSTALL_LAUNCHER; then
         say "     (run with ${BOLD}--install-launcher${NC} to add the launcher to ~/.local/bin)"
     fi
