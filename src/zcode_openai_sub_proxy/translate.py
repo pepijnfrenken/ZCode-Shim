@@ -70,19 +70,55 @@ def convert_messages(messages: Any) -> tuple[str, list[dict[str, Any]]]:
             continue
         role = message.get("role")
         text = extract_text(message.get("content"))
-        if not text:
-            continue
+
         if role == "system":
-            instructions.append(text)
+            if text:
+                instructions.append(text)
             continue
+
         if role == "assistant":
-            mapped_role = "assistant"
-            content_type = "output_text"
-        else:
-            # "user", "tool", "function" all map to user input.
-            mapped_role = "user"
-            content_type = "input_text"
-        inputs.append({"role": mapped_role, "content": [{"type": content_type, "text": text}]})
+            # Build content parts: text + function_call items from tool_calls.
+            content_parts: list[dict[str, Any]] = []
+            if text:
+                content_parts.append({"type": "output_text", "text": text})
+
+            tool_calls = message.get("tool_calls")
+            if isinstance(tool_calls, list):
+                for tc in tool_calls:
+                    if not isinstance(tc, dict):
+                        continue
+                    fn = tc.get("function") or {}
+                    call_id = tc.get("id") or "call_0"
+                    content_parts.append({
+                        "type": "function_call",
+                        "call_id": call_id,
+                        "id": call_id,
+                        "name": fn.get("name") or "",
+                        "arguments": fn.get("arguments") or "",
+                        "status": "completed",
+                    })
+
+            if content_parts:
+                inputs.append({"role": "assistant", "content": content_parts})
+            continue
+
+        if role == "tool":
+            # Map to function_call_output item.
+            tool_call_id = message.get("tool_call_id") or "call_0"
+            inputs.append({
+                "role": "user",
+                "content": [{
+                    "type": "function_call_output",
+                    "call_id": tool_call_id,
+                    "output": text,
+                }],
+            })
+            continue
+
+        # "user", "function", or anything else → user input.
+        if text:
+            inputs.append({"role": "user", "content": [{"type": "input_text", "text": text}]})
+
     return "\n\n".join(instructions) or "You are a helpful coding assistant.", inputs
 
 
@@ -109,6 +145,9 @@ def event_text(event: dict[str, Any]) -> str:
     """Extract delta text from a Codex SSE event dict."""
     delta = event.get("delta")
     if isinstance(delta, str):
+        # Function-call argument deltas are handled by extract_tool_calls().
+        if event.get("type") == "response.function_call_arguments.delta":
+            return ""
         return delta
     if event.get("type") == "response.output_text.delta" and isinstance(event.get("text"), str):
         return event["text"]
@@ -118,6 +157,75 @@ def event_text(event: dict[str, Any]) -> str:
         if isinstance(content, list):
             return "".join(extract_text(part) for part in content if isinstance(part, dict))
     return ""
+
+
+def extract_tool_calls(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Extract tool_calls from Codex SSE events.
+
+    Tracks function_call items across ``output_item.added``,
+    ``function_call_arguments.delta``, and ``output_item.done`` events.
+    """
+    calls: dict[str, dict[str, Any]] = {}  # call_id → {name, arguments}
+    ordered_ids: list[str] = []
+
+    for event in events:
+        etype = event.get("type")
+
+        # output_item.added — capture function_call metadata.
+        if etype == "response.output_item.added":
+            item = event.get("item")
+            if isinstance(item, dict) and item.get("type") == "function_call":
+                call_id = item.get("call_id") or item.get("id") or ""
+                name = item.get("name") or ""
+                args = item.get("arguments") or ""
+                if call_id:
+                    calls[call_id] = {"name": name, "arguments": args}
+                    if call_id not in ordered_ids:
+                        ordered_ids.append(call_id)
+
+        # function_call_arguments.delta — accumulate argument text.
+        elif etype == "response.function_call_arguments.delta":
+            call_id = event.get("call_id") or ""
+            delta_text = event.get("delta") or ""
+            if call_id:
+                if call_id not in calls:
+                    calls[call_id] = {"name": "", "arguments": ""}
+                    ordered_ids.append(call_id)
+                calls[call_id]["arguments"] += delta_text
+
+        # output_item.done — finalize with complete arguments if available.
+        elif etype == "response.output_item.done":
+            item = event.get("item")
+            if isinstance(item, dict) and item.get("type") == "function_call":
+                call_id = item.get("call_id") or item.get("id") or ""
+                name = item.get("name") or ""
+                args = item.get("arguments")
+                if call_id:
+                    if call_id not in calls:
+                        calls[call_id] = {"name": name, "arguments": args if isinstance(args, str) else ""}
+                        ordered_ids.append(call_id)
+                    else:
+                        if name and not calls[call_id]["name"]:
+                            calls[call_id]["name"] = name
+                        if isinstance(args, str) and args:
+                            calls[call_id]["arguments"] = args
+
+    # Build OpenAI-format tool_calls array.
+    tool_calls: list[dict[str, Any]] = []
+    for call_id in ordered_ids:
+        info = calls.get(call_id)
+        if not info or not info.get("name"):
+            continue
+        tool_calls.append({
+            "id": call_id,
+            "type": "function",
+            "function": {
+                "name": info["name"],
+                "arguments": info["arguments"],
+            },
+        })
+
+    return tool_calls
 
 
 def build_codex_body(payload: dict[str, Any]) -> dict[str, Any]:
@@ -135,24 +243,42 @@ def build_codex_body(payload: dict[str, Any]) -> dict[str, Any]:
         body["reasoning"] = {"effort": effort}
     elif ultracode_enabled():
         body["reasoning"] = {"effort": default_effort()}
+
+    # Forward tool definitions — the Codex Responses API accepts OpenAI-format tools.
+    if "tools" in payload:
+        body["tools"] = payload["tools"]
+    if "tool_choice" in payload:
+        body["tool_choice"] = payload["tool_choice"]
+    if "parallel_tool_calls" in payload:
+        body["parallel_tool_calls"] = payload["parallel_tool_calls"]
+
     return body
 
 
 def chat_completion(payload: dict[str, Any], raw: bytes) -> dict[str, Any]:
     """Convert a buffered Codex SSE response into a single OpenAI chat-completion dict."""
-    text = "".join(event_text(event) for event in decode_sse_payloads(raw))
+    events = decode_sse_payloads(raw)
+    text = "".join(event_text(event) for event in events)
+    tool_calls = extract_tool_calls(events)
     now = int(time.time())
+    message: dict[str, Any] = {"role": "assistant", "content": text}
+    finish_reason = "stop"
+    if tool_calls:
+        message["tool_calls"] = tool_calls
+        finish_reason = "tool_calls"
     return {
         "id": f"chatcmpl-zcode-openai-sub-{now}",
         "object": "chat.completion",
         "created": now,
         "model": normalize_model_id(payload.get("model")),
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
+        "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
     }
 
 
 def chat_completion_stream(payload: dict[str, Any], raw: bytes) -> bytes:
     """Convert a Codex SSE response into OpenAI-compatible streaming SSE chunks."""
+    events = decode_sse_payloads(raw)
+    tool_calls = extract_tool_calls(events)
     model = normalize_model_id(payload.get("model"))
     now = int(time.time())
     chunks: list[bytes] = []
@@ -167,7 +293,7 @@ def chat_completion_stream(payload: dict[str, Any], raw: bytes) -> bytes:
     }
     chunks.append(f"data: {json.dumps(role_chunk, separators=(',', ':'))}\n\n".encode())
 
-    for event in decode_sse_payloads(raw):
+    for event in events:
         text = event_text(event)
         if not text:
             continue
@@ -180,12 +306,24 @@ def chat_completion_stream(payload: dict[str, Any], raw: bytes) -> bytes:
         }
         chunks.append(f"data: {json.dumps(chunk, separators=(',', ':'))}\n\n".encode())
 
+    # Emit tool_calls as a delta chunk if the model made any.
+    if tool_calls:
+        tool_chunk = {
+            "id": f"chatcmpl-zcode-openai-sub-{now}",
+            "object": "chat.completion.chunk",
+            "created": now,
+            "model": model,
+            "choices": [{"index": 0, "delta": {"tool_calls": tool_calls}, "finish_reason": None}],
+        }
+        chunks.append(f"data: {json.dumps(tool_chunk, separators=(',', ':'))}\n\n".encode())
+
+    finish_reason = "tool_calls" if tool_calls else "stop"
     done = {
         "id": f"chatcmpl-zcode-openai-sub-{now}",
         "object": "chat.completion.chunk",
         "created": now,
         "model": model,
-        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}],
     }
     chunks.append(f"data: {json.dumps(done, separators=(',', ':'))}\n\n".encode())
     chunks.append(b"data: [DONE]\n\n")
