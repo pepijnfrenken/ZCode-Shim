@@ -353,50 +353,28 @@ def chat_completion_stream(payload: dict[str, Any], raw: bytes) -> bytes:
     tool_calls = extract_tool_calls(events)
     model = normalize_model_id(payload.get("model"))
     now = int(time.time())
-    chunks: list[bytes] = []
 
-    # First chunk carries the role delta per the OpenAI streaming spec.
-    role_chunk = {
-        "id": f"chatcmpl-zcode-openai-sub-{now}",
-        "object": "chat.completion.chunk",
-        "created": now,
-        "model": model,
-        "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
-    }
-    chunks.append(f"data: {json.dumps(role_chunk, separators=(',', ':'))}\n\n".encode())
-
-    for event in events:
-        text = event_text(event)
-        if not text:
-            continue
+    def _emit(delta: dict[str, Any], finish_reason: str | None = None) -> bytes:
         chunk = {
             "id": f"chatcmpl-zcode-openai-sub-{now}",
             "object": "chat.completion.chunk",
             "created": now,
             "model": model,
-            "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": None}],
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
         }
-        chunks.append(f"data: {json.dumps(chunk, separators=(',', ':'))}\n\n".encode())
+        return f"data: {json.dumps(chunk, separators=(',', ':'))}\n\n".encode()
 
-    # Emit tool_calls as a delta chunk if the model made any.
+    chunks: list[bytes] = [_emit({"role": "assistant"})]
+
+    for event in events:
+        text = event_text(event)
+        if text:
+            chunks.append(_emit({"content": text}))
+
     if tool_calls:
-        tool_chunk = {
-            "id": f"chatcmpl-zcode-openai-sub-{now}",
-            "object": "chat.completion.chunk",
-            "created": now,
-            "model": model,
-            "choices": [{"index": 0, "delta": {"tool_calls": tool_calls}, "finish_reason": None}],
-        }
-        chunks.append(f"data: {json.dumps(tool_chunk, separators=(',', ':'))}\n\n".encode())
+        chunks.append(_emit({"tool_calls": tool_calls}))
 
     finish_reason = "tool_calls" if tool_calls else "stop"
-    done = {
-        "id": f"chatcmpl-zcode-openai-sub-{now}",
-        "object": "chat.completion.chunk",
-        "created": now,
-        "model": model,
-        "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}],
-    }
-    chunks.append(f"data: {json.dumps(done, separators=(',', ':'))}\n\n".encode())
+    chunks.append(_emit({}, finish_reason))
     chunks.append(b"data: [DONE]\n\n")
     return b"".join(chunks)

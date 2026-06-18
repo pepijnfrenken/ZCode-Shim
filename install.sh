@@ -22,7 +22,6 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 say()  { printf '%b\n' "$*"; }
-info() { printf '  %b\n' "$*"; }
 ok()   { printf "  ${GREEN}✓${NC} %b\n" "$*"; }
 warn() { printf "  ${YELLOW}⚠${NC} %b\n" "$*"; }
 err()  { printf "  ${RED}✗${NC} %b\n" "$*"; }
@@ -117,7 +116,7 @@ uninstall_launcher() {
     elif [ -f "$LAUNCHER_DST" ]; then
         warn "$LAUNCHER_DST exists but is not a symlink (not removing)"
     else
-        info "no launcher found at $LAUNCHER_DST"
+        say "  no launcher found at $LAUNCHER_DST"
     fi
 }
 

@@ -13,21 +13,12 @@ import json
 import os
 import socket
 import sys
-from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = Path(os.environ.get("ZCODE_OPENAI_SUB_PROXY_DATA", PROJECT_ROOT / "data"))
-AUTH_FILE = DATA_DIR / "auth.json"
-AUTH_EXAMPLE_FILE = DATA_DIR / "auth.example.json"
-MODELS_FILE = DATA_DIR / "models.json"
-DEFAULT_MODELS_FILE = PROJECT_ROOT / "data" / "models.json"
-if not DEFAULT_MODELS_FILE.is_file():
-    DEFAULT_MODELS_FILE = PROJECT_ROOT / "src" / "zcode_openai_sub_proxy" / "data" / "models.json"
-CODEX_HOME = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-CODEX_AUTH_FILE = CODEX_HOME / "auth.json"
+from zcode_openai_sub_proxy.config import AUTH_FILE, AUTH_EXAMPLE_FILE, MODELS_FILE, DEFAULT_MODELS_FILE, PORT as PROXY_PORT
+from zcode_openai_sub_proxy.local_store import CODEX_HOME, CODEX_AUTH_FILE
+
 CODEX_HOST = "chatgpt.com"
 CODEX_PORT = 443
-PROXY_PORT = 48765
 
 _errors = 0
 _warnings = 0

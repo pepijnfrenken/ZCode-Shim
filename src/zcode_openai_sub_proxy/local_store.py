@@ -67,28 +67,6 @@ def _is_expiring(token: str, skew: int = 120) -> bool:
     return False
 
 
-def _best_effort_refresh() -> None:
-    """Attempt a best-effort token refresh.
-
-    Tries the Codex CLI first (``codex login status``), then falls back to
-    direct OAuth refresh using the stored ``refresh_token``.
-    """
-    # Strategy 1: Codex CLI subprocess (works if user ran `codex login`).
-    if CODEX_REFRESH_CMD:
-        try:
-            subprocess.run(
-                CODEX_REFRESH_CMD.split(),
-                timeout=25,
-                capture_output=True,
-                check=False,
-            )
-        except Exception:
-            pass
-
-    # Strategy 2: Direct OAuth refresh using the stored refresh_token
-    # (works if user ran our scripts/codex-login.py or we have a refresh_token).
-    # This is handled inline in _read_credential() where we have the data.
-
 
 def _refresh_with_token(refresh_token: str) -> dict[str, Any] | None:
     """Exchange a refresh_token for new tokens via the OAuth token endpoint.
